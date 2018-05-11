@@ -6,7 +6,6 @@
 #include <stdint.h> // for uint32_t
 #include <string.h> // for memset(...)
 
-#define ELEMENT_TYPE void
 #define SPSC_QUEUE_SIZE (1024 * 8)
 #define SPSC_BATCH_SIZE (SPSC_QUEUE_SIZE/16)
 #define SPSC_BATCH_INCREAMENT (SPSC_BATCH_SIZE/2)
@@ -16,7 +15,10 @@
 #define SPSC_Q_FULL -1
 #define SPSC_Q_EMPTY -2
 
-static ELEMENT_TYPE* SPSC_QUEUE_ELEMENT_ZERO = NULL;
+#ifndef ELEMENT_TYPE
+    #define ELEMENT_TYPE uint32_t
+#endif
+static ELEMENT_TYPE SPSC_QUEUE_ELEMENT_ZERO = 0;
 
 typedef struct spsc_queue {
     volatile        uint32_t        head;                               // Mostly accessed by producer.
@@ -25,7 +27,12 @@ typedef struct spsc_queue {
     volatile        uint32_t        batch_tail;
     unsigned long   batch_history;
 
-    ELEMENT_TYPE* data[SPSC_QUEUE_SIZE] __attribute__ ((aligned(64))); // accessed by both producer and comsumer
+#ifdef SPSC_Q_UNDER_TEST
+    uint64_t        start_c __attribute__ ((aligned(64)));
+    uint64_t        stop_c;
+#endif
+
+    ELEMENT_TYPE data[SPSC_QUEUE_SIZE] __attribute__ ((aligned(64))); // accessed by both producer and comsumer
 } __attribute__ ((aligned(64))) spsc_queue_t;
 
 static inline uint64_t _read_tsc() {
@@ -55,17 +62,15 @@ static void queue_init(spsc_queue_t* this) {
     this->batch_history = SPSC_BATCH_SIZE;
 }
 
-static inline ELEMENT_TYPE* front_peek(spsc_queue_t* this) {
-    ELEMENT_TYPE* value = SPSC_QUEUE_ELEMENT_ZERO;
-
+static inline int front_peek(spsc_queue_t* this, ELEMENT_TYPE* value) {
 	if ( this->data[this->tail] ) {
-    	value = this->data[this->tail];
+    	*value = this->data[this->tail];
+        return SPSC_OP_SUCCESS;
     }
-
-	return value;
+    return SPSC_Q_EMPTY;
 }
 
-static inline int dequeue(spsc_queue_t* this, ELEMENT_TYPE** pValue) {
+static inline int dequeue(spsc_queue_t* this, ELEMENT_TYPE* pValue) {
     uint32_t tmp_tail;
     unsigned long batch_size = this->batch_history;
     *pValue = SPSC_QUEUE_ELEMENT_ZERO;
@@ -116,7 +121,7 @@ static inline int dequeue(spsc_queue_t* this, ELEMENT_TYPE** pValue) {
     return SPSC_OP_SUCCESS;
 }
 
-static inline int enqueue(spsc_queue_t* this, ELEMENT_TYPE* value) {
+static inline int enqueue(spsc_queue_t* this, ELEMENT_TYPE value) {
     uint32_t tmp_head;
 
     // try to zero-in on next batch head
