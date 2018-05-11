@@ -6,7 +6,15 @@
 #include <stdint.h> // for uint32_t
 #include <string.h> // for memset(...)
 
-#define SPSC_QUEUE_SIZE (1024 * 8)
+#ifndef SPSC_QUEUE_SIZE
+    #define SPSC_QUEUE_SIZE (1024 * 8)
+#endif
+
+#ifndef ELEMENT_TYPE
+    #define ELEMENT_TYPE uint32_t
+#endif
+static ELEMENT_TYPE SPSC_QUEUE_ELEMENT_ZERO = 0;
+
 #define SPSC_BATCH_SIZE (SPSC_QUEUE_SIZE/16)
 #define SPSC_BATCH_INCREAMENT (SPSC_BATCH_SIZE/2)
 #define SPSC_CONGESTION_PENALTY (1000) // spin-cycles
@@ -15,10 +23,6 @@
 #define SPSC_Q_FULL -1
 #define SPSC_Q_EMPTY -2
 
-#ifndef ELEMENT_TYPE
-    #define ELEMENT_TYPE uint32_t
-#endif
-static ELEMENT_TYPE SPSC_QUEUE_ELEMENT_ZERO = 0;
 
 typedef struct spsc_queue {
     volatile        uint32_t        head;                               // Mostly accessed by producer.
