@@ -23,12 +23,17 @@ static ELEMENT_TYPE SPSC_QUEUE_ELEMENT_ZERO = 0;
 #define SPSC_Q_FULL -1
 #define SPSC_Q_EMPTY -2
 
+typedef union counter {
+    volatile uint32_t w;
+    volatile const volatile uint32_t r;
+} counter_t;
+
 
 typedef struct spsc_queue {
-    volatile        uint32_t        head;                               // Mostly accessed by producer.
-    volatile        uint32_t        batch_head;
-    volatile        uint32_t        tail __attribute__ ((aligned(64))); // Mostly accessed by consumer.
-    volatile        uint32_t        batch_tail;
+    counter_t         head;                               // Mostly accessed by producer.
+    volatile uint32_t batch_head;
+    counter_t        tail __attribute__ ((aligned(64))); // Mostly accessed by consumer.
+    volatile uint32_t batch_tail;
     unsigned long   batch_history;
 
 #ifdef SPSC_Q_UNDER_TEST
@@ -67,8 +72,8 @@ static void queue_init(spsc_queue_t* this) {
 }
 
 static inline int front_peek(spsc_queue_t* this, ELEMENT_TYPE* value) {
-	if ( this->data[this->tail] ) {
-    	*value = this->data[this->tail];
+	if ( this->data[this->tail.r] ) {
+    	*value = this->data[this->tail.r];
         return SPSC_OP_SUCCESS;
     }
     return SPSC_Q_EMPTY;
@@ -80,8 +85,8 @@ static inline int dequeue(spsc_queue_t* this, ELEMENT_TYPE* pValue) {
     *pValue = SPSC_QUEUE_ELEMENT_ZERO;
 
     // try to zero-in on next batch tail
-    if( this->tail == this->batch_tail ) {
-        tmp_tail = this->tail + SPSC_BATCH_SIZE;
+    if( this->tail.r == this->batch_tail ) {
+        tmp_tail = this->tail.r + SPSC_BATCH_SIZE;
         if ( tmp_tail >= SPSC_QUEUE_SIZE ) {
                 tmp_tail = 0;
                 if (this->batch_history < SPSC_BATCH_SIZE) {
@@ -97,7 +102,7 @@ static inline int dequeue(spsc_queue_t* this, ELEMENT_TYPE* pValue) {
 
             batch_size = batch_size >> 1;
             if( batch_size >= 0 ) {
-                    tmp_tail = this->tail + batch_size;
+                    tmp_tail = this->tail.r + batch_size;
                     if (tmp_tail >= SPSC_QUEUE_SIZE) {
                         tmp_tail = 0;
                     }
@@ -107,7 +112,7 @@ static inline int dequeue(spsc_queue_t* this, ELEMENT_TYPE* pValue) {
         }
         this->batch_history = batch_size;
 
-        if ( tmp_tail == this->tail ) {
+        if ( tmp_tail == this->tail.r ) {
             tmp_tail = (tmp_tail + 1) >= SPSC_QUEUE_SIZE ?
                     0 : tmp_tail + 1;
         }
@@ -115,11 +120,11 @@ static inline int dequeue(spsc_queue_t* this, ELEMENT_TYPE* pValue) {
     }
 
     // actually pull-out data-element
-    *pValue = this->data[this->tail];
-    this->data[this->tail] = SPSC_QUEUE_ELEMENT_ZERO;
-    this->tail ++;
-    if ( this->tail >= SPSC_QUEUE_SIZE ) {
-            this->tail = 0;
+    *pValue = this->data[this->tail.r];
+    this->data[this->tail.r] = SPSC_QUEUE_ELEMENT_ZERO;
+    this->tail.w ++;
+    if ( this->tail.r >= SPSC_QUEUE_SIZE ) {
+            this->tail.w = 0;
     }
 
     return SPSC_OP_SUCCESS;
@@ -129,8 +134,8 @@ static inline int enqueue(spsc_queue_t* this, ELEMENT_TYPE value) {
     uint32_t tmp_head;
 
     // try to zero-in on next batch head
-    if( this->head == this->batch_head ) {
-        tmp_head = this->head + SPSC_BATCH_SIZE;
+    if( this->head.r == this->batch_head ) {
+        tmp_head = this->head.r + SPSC_BATCH_SIZE;
         if ( tmp_head >= SPSC_QUEUE_SIZE )
                 tmp_head = 0;
         if ( this->data[tmp_head] ) {
@@ -142,10 +147,10 @@ static inline int enqueue(spsc_queue_t* this, ELEMENT_TYPE value) {
         }
     }
 
-    this->data[this->head] = value;
-    this->head ++;
-    if ( this->head >= SPSC_QUEUE_SIZE ) {
-            this->head = 0;
+    this->data[this->head.r] = value;
+    this->head.w ++;
+    if ( this->head.r >= SPSC_QUEUE_SIZE ) {
+            this->head.w = 0;
     }
 
     return SPSC_OP_SUCCESS;
