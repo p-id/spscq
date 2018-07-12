@@ -55,5 +55,4 @@ References:
 
 # About
 
-This project was created by [Piyush Dewnani]
-<[piyush@dewnani.net](mailto:piyush@dewnani.net)>.
+This project was created by [Piyush Dewnani](mailto:piyush@dewnani.net)
